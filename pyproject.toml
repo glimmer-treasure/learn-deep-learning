@@ -7,7 +7,9 @@ authors = [
     { name = "macbook pro 16", email = "glimmer.treasure@gmail.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "torch>=2.14.1",
+]
 
 [project.scripts]
 mini-transformer = "mini_transformer:main"
@@ -15,3 +17,9 @@ mini-transformer = "mini_transformer:main"
 [build-system]
 requires = ["uv_build>=0.12.22,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+    "notebook>=7.6.3",
+]
