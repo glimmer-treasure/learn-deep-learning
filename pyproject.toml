@@ -1,5 +1,5 @@
 [project]
-name = "mini-transformer"
+name = "learn-deep-learning"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "matplotlib>=3.11.2",
     "torch>=2.14.1",
 ]
 
