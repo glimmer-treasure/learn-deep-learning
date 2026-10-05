@@ -19,6 +19,13 @@ mini-transformer = "mini_transformer:main"
 requires = ["uv_build>=0.12.22,<0.13.0"]
 build-backend = "uv_build"
 
+# 本项目是学习用的脚本集合（src/mini_gpt、src/mini_transformer、src/simple_mlp），
+# 代码包名与项目名不一致（项目名 learn-deep-learning -> learn_deep_learning），
+# 因此不把项目自身当作可安装的包构建，避免 uv run 报
+# "Expected a Python module at: src/learn_deep_learning/__init__.py"
+[tool.uv]
+package = false
+
 [dependency-groups]
 dev = [
     "jupyter>=1.1.1",
