@@ -162,3 +162,20 @@ class MultiHeadAttention(nn.Module):
 
         output = self.out_proj(joined)
         return output.squeeze(0) if unbatched else output
+
+class SwiGLU(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # 门控与升维两条并行投影，逐元素相乘后再降维；均不使用偏置
+        # gate_proj 决定哪些特征通过，up_proj 提供被筛选的内容，两条路径形状均为 [..., D_FF]
+        self.gate_proj = nn.Linear(D_MODEL, D_FF, bias=False)
+        self.up_proj = nn.Linear(D_MODEL, D_FF, bias=False)
+
+        # 逐元素门控后再投影回 D_MODEL, 保证结果能与残差分支相加
+        self.down_proj = nn.Linear(D_FF, D_MODEL, bias=False)
+
+        self.activation = nn.SiLU()
+
+    def forward(self, x):
+        # SiLU(gate) 与 up 逐元素相乘，相当于为每个 Token、每个中间特征学习一个连续门控值
+        return self.down_proj(self.activation(self.gate_proj(x)) * self.up_proj(x))
