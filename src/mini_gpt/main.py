@@ -92,3 +92,22 @@ class RotaryPositionalEmbedding(nn.Module):
         # stack 后为[..., head_dim/2, 2], flatten 将每对维度交错还原为 [..., head_dim]
         rottated = torch.stack((rotated_even, rotated_odd), dim=-1)
         return rottated.flatten(-2)
+
+def attention(q, k, v):
+    # 单头 [L, Dh] 与批量多头 [B, H, L, Dh] 共用同一计算，@ 作用与最后两维
+    # 转置 K 的最后两维后，Q @ K^T 得到 [..., L, L] 的注意力分数
+    # 除以 sqrt(Dh) 可控制点积数值范围，避免 softmax 过早进入接近 one-hot 的饱和区
+    scores = q @ k.transpose(-2, -1) / math.sqrt(q.shape[-1])
+
+    sequence_length = q.shape[-2]
+    # diagonal=1 只遮住严格位于主对角线右上方的位置：第 i 个 Token 可看见自己和全部前文
+    # mask 与 q 放在同一设备，避免在 GPU/MPS 训练时发生设备不一致的问题
+    mask = torch.triu(torch.ones(sequence_length, sequence_length, dtype=torch.bool, device=q.device), diagonal=1)
+
+    # [L, L] 掩码自动广播到每个 Batch、每个 Head 的分数矩阵
+    scores = scores.masked_fill(mask, float("-inf"))
+
+    # softmax 在 Key 维度归一化，使每个 Query 对所有可见位置的权重之和为 1
+    weights = torch.softmax(scores, dim=-1)
+    # [B, H, L, L] @ [B, H, L, Dh] -> [B, H, L, Dh]
+    return weights @ v
