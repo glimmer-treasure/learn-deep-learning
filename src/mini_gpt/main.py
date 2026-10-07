@@ -111,3 +111,54 @@ def attention(q, k, v):
     weights = torch.softmax(scores, dim=-1)
     # [B, H, L, L] @ [B, H, L, Dh] -> [B, H, L, Dh]
     return weights @ v
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self):
+        super().__init__()
+        assert D_MODEL % HEADS == 0, "D_MODEL 必须能被 HEADS 整除"
+        self.head_dim = D_MODEL // HEADS
+
+        # LLaMA 结构中的线性层不使用偏置
+        # 一次生成 Q、K、V; bias=False 与 LLaMA 的无偏置线性层保持一致
+        self.qkv_proj = nn.Linear(D_MODEL, 3 * D_MODEL, bias=False)
+
+        # 多头结果拼接后，通过输出投影重新混合各个 Head 的信息
+        self.out_proj = nn.Linear(D_MODEL, D_MODEL, bias=False)
+
+        # 旋转位置编码引入
+        self.rope = RotaryPositionalEmbedding(self.head_dim, MAX_LENGTH)
+
+    def forward(self, x):
+        # 生成是可能传入 [L, D_MODEL], 统一转为 [1, L, D_MODEL] 进行多头计算
+        unbatched = x.dim() == 2
+        if unbatched:
+            x = x.unsqueeze(0)
+
+        batch_size, sequence_length, _ = x.shape
+        qkv = self.qkv_proj(x)
+
+        # 在最后一维平均切分成三份；此时 Q、K、V 的形状均为 [B, L, D_MOEL]
+        q, k, v = qkv.chunk(3, dim=-1)
+
+        def split_head(tensor):
+            # [B, L, D_MODEL] -> [B, L, H, Dh] -> [B, H, L, Dh]
+            return tensor.reshape(batch_size, sequence_length, HEADS, self.head_dim).transpose(1, 2)
+
+        q = split_head(q)
+        k = split_head(k)
+        v = split_head(v)
+
+        # RoPE 只旋转 Q 和 K，让注意力分数依赖相对位置，V 保持不变
+        # Q、K 在相同位置使用相同旋转角，二者点积后，绝对角度相消，只保留相对位置差
+        q = self.rope(q)
+        k = self.rope(k)
+
+        # 一次矩阵运算并行处理所有 Batch 和所有 Head
+        context = attention(q, k, v) # [B, H, L, Dh]
+
+        # [B, H, L, Dh] -> [B, L, H, Dh] -> [B, L, D_MODEL] 把多个 Head 重新拼回特征维
+        # transpose 后内存通常不连续，先调用 contiguous 再 reshape 可避免潜在的步长问题
+        joined = context.transpose(1, 2).contiguous().reshape(batch_size, sequence_length, D_MODEL)
+
+        output = self.out_proj(joined)
+        return output.squeeze(0) if unbatched else output
