@@ -191,3 +191,33 @@ class RMSNorm(nn.Module):
         # 在最后的特征维计算均方根，keepdim = True 便于广播回原形状
         rms = torch.sqrt(x.pow(2).mean(dim = -1, keepdim = True,) + self.eps)
         return self.weight * (x / rms)
+
+class GPTBlock(nn.Module):
+    def __init__(self):
+        super.__init__()
+        self.self_attn = MultiHeadAttention()
+        self.ffn = SwiGLU()
+        self.norm1 = RMSNorm()
+        self.norm2 = RMSNorm()
+        # 残差 Dropout: 子层输出在加回残差前先随机置零一部分，抑制记忆式过拟合
+        self.dropout = nn.Dropout(DROPOUT)
+
+    def forward(self, x):
+        # Pre-Norm: 先归一化再进子层，残差分支保持不被归一化
+        # 注意调用顺序：RMSNorm(x) 进入子层，子层输出再与原始 x 相加，这就是 Pre-norm
+        x = x + self.dropout(self.self_attn(self.norm1(x)))
+        x = x + self.dropout(self.ffn(self.norm2(x)))
+        return x
+
+class GPTDecoder(nn.Module):
+    def __init__(self, num_layers):
+        super().__init__()
+        self.layers = nn.ModuleList([GPTBlock() for _ in range(num_layers)])
+        self.norm = RMSNorm(D_MODEL) # Pre-Norm 结构需在最后补一次归一化
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        # 各 Block 的残差分支末尾没有归一化，因此堆叠结束后需补一次 RMSNorm
+        return self.norm(x)
+
