@@ -179,3 +179,15 @@ class SwiGLU(nn.Module):
     def forward(self, x):
         # SiLU(gate) 与 up 逐元素相乘，相当于为每个 Token、每个中间特征学习一个连续门控值
         return self.down_proj(self.activation(self.gate_proj(x)) * self.up_proj(x))
+
+class RMSNorm(nn.Module):
+    # eps 避免分母为 0
+    def __init__(self, dim, eps = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        # 在最后的特征维计算均方根，keepdim = True 便于广播回原形状
+        rms = torch.sqrt(x.pow(2).mean(dim = -1, keepdim = True,) + self.eps)
+        return self.weight * (x / rms)
